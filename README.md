@@ -101,8 +101,12 @@ pip install -r requirements.txt
 ### 2 · Vista Web (recomendada)
 
 ```bash
-streamlit run app_web.py
+python verificar_proyecto.py
+python -m streamlit run app_web.py
 ```
+
+El verificador no modifica archivos: comprueba conflictos de Git, codificación y
+sintaxis antes del arranque. `python -m streamlit` usa el entorno virtual activo.
 
 ### 3 · Versión GUI (escritorio)
 
@@ -164,6 +168,50 @@ y se descarga directamente.
 ---
 
 ## ❓ Problemas comunes
+
+### Errores de arranque en Windows
+
+**`SyntaxError: invalid decimal literal` en una línea `>>>>>>> ...`** significa que
+el archivo contiene un conflicto de Git sin resolver. **`TOMLDecodeError: Invalid
+statement (at line 1, column 1)`** puede indicar otro conflicto en la configuración
+o una marca BOM (frecuente al guardar archivos desde Windows PowerShell).
+
+Ejecuta `python verificar_proyecto.py` para identificar el archivo afectado. Si el
+verificador no está aún en tu copia local, inspecciona `app_web.py` y
+`.streamlit/config.toml` directamente. No basta con borrar los marcadores: también
+hay que elegir la versión correcta del contenido entre ellos.
+
+Si **no necesitas conservar modificaciones locales en esos dos archivos**, puedes
+recuperar la versión de `origin/main`. En PowerShell, desde la raíz del proyecto:
+
+```powershell
+# Primero guarda copias: git restore sustituirá el contenido local.
+Copy-Item app_web.py app_web.py.bak
+Copy-Item .streamlit/config.toml .streamlit/config.toml.bak
+# Si algún comando falla, detente y revisa el error antes de continuar.
+git fetch origin
+git restore --source=origin/main --staged --worktree -- app_web.py .streamlit/config.toml
+python verificar_proyecto.py
+python -m streamlit run app_web.py
+```
+
+Esto no cambia de rama. Si tienes un merge o rebase en curso, revisa primero
+`git status` y resuelve la operación; los comandos anteriores no completan ese
+proceso ni recuperan cambios locales personalizados (quedan en los `.bak`).
+
+Si persiste **solo el error TOML**, comprueba también la configuración global
+`$HOME/.streamlit/config.toml`: Streamlit lee tanto la global como la del proyecto.
+Guarda los archivos TOML como **UTF-8 sin BOM**; en PowerShell puedes corregir el del
+proyecto, después de hacer la copia de seguridad, con:
+
+```powershell
+$ruta = (Resolve-Path .streamlit/config.toml).Path
+$texto = [System.IO.File]::ReadAllText($ruta)
+[System.IO.File]::WriteAllText($ruta, $texto, [System.Text.UTF8Encoding]::new($false))
+```
+
+El verificador comprueba únicamente los archivos del proyecto, no la configuración
+global. No publiques archivos de configuración que contengan secretos.
 
 - **«No se detectaron capítulos»** — el PDF suele estar escaneado (imágenes sin texto seleccionable). Necesita OCR previo (por ejemplo con [OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF)).
 - **«El PDF está protegido con contraseña»** — escríbela en **Ajustes → Contraseña del PDF** y vuelve a analizar.

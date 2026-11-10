@@ -18,6 +18,9 @@ jobs:
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet -r requirements.txt pytest
 
+      - name: Configuración, codificación y conflictos de Git
+        run: python verificar_proyecto.py
+
       - name: Sintaxis de los cuatro puntos de entrada
         run: python -m py_compile segmentador_core.py app_web.py segmentar_libros.py segmentar_libros_gui.py
 
