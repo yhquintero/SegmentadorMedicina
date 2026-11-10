@@ -1,0 +1,37 @@
+name: CI SegmentadorMedicina
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r requirements.txt pytest
+
+      - name: Sintaxis de los cuatro puntos de entrada
+        run: python -m py_compile segmentador_core.py app_web.py segmentar_libros.py segmentar_libros_gui.py
+
+      - name: Pruebas del núcleo y de la vista Web
+        run: python -m pytest -q
+
+      - name: Humo de la vista Web (arranque y estáticos)
+        run: |
+          set -e
+          streamlit run app_web.py --server.headless true --server.port 8501 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8501/_stcore/health >/dev/null && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:8501/
+          curl -sf -o /dev/null http://localhost:8501/app/static/hero.jpg
+          kill %1
