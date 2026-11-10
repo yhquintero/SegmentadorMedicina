@@ -6,7 +6,7 @@
 
 ### Divide. Revisa. Descarga.
 
-**Divide automáticamente libros PDF de Medicina por capítulos — con vista previa editable,
+**Divide libros PDF de Medicina por secciones y capítulos — con diagnóstico, OCR opcional y vista previa editable,
 modo claro/oscuro y descarga exclusivamente en ZIP con los capítulos en PDF dentro.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](#-requisitos)
@@ -30,12 +30,12 @@ modo claro/oscuro y descarga exclusivamente en ZIP con los capítulos en PDF den
 
 | Ficha del proyecto | Detalle |
 |---|---|
-| **Qué es** | Herramienta que divide libros PDF de Medicina en un PDF por capítulo |
+| **Qué es** | Herramienta que divide libros PDF de Medicina por secciones y capítulos dentro de un ZIP |
 | **Para quién** | Estudiantes, docentes, bibliotecas y profesionales de la salud que estudian por capítulos |
 | **Cómo está hecho** | Python 3.10+ · [PyMuPDF](https://pymupdf.readthedocs.io/) (detección y extracción) · Streamlit (vista Web) · Tkinter (escritorio) · PyInstaller (.exe) |
 | **Dónde corre** | Windows, macOS y Linux. Sin dependencia de la nube |
 | **Cómo se usa** | Vista Web (navegador), GUI de escritorio o línea de comandos |
-| **Detección** | Marcadores/TOC del propio PDF (método principal) y, si no hay, detección de títulos por texto |
+| **Detección** | Marcadores + texto multilingüe + tipografía, índice impreso, OCR opcional y rangos manuales |
 
 > 📖 **Antes de generar nada** la vista Web te muestra la lista de capítulos detectados:
 > edita los títulos, excluye los que no quieras y confirma. Nunca se genera a ciegas.
@@ -44,14 +44,18 @@ modo claro/oscuro y descarga exclusivamente en ZIP con los capítulos en PDF den
 
 ## ✨ Funciones
 
-- 📚 **Doble método de detección** — usa los marcadores (TOC) del PDF y, si no existen, busca títulos de capítulo en el texto (*Capítulo*, *Chapter*, *Sección*, *Unidad*, *Parte*, *Tema*…).
-- 👀 **Vista previa con confirmación** — revisa capítulos y páginas antes de extraer: edita títulos y desmarca los que no quieras.
+- 📚 **Detección combinada y explicable** — marcadores con profundidad configurable, texto multilingüe y tipografía; índice impreso como método experimental.
+- 🗂 **Secciones editoriales** — portada, copyright, presentación, prefacio, reconocimientos, colaboradores, editores actuales/anteriores, notas, capítulos, anexos, bibliografía y más.
+- 🔬 **Laboratorio PDF** — diagnóstico por página, candidatos con procedencia, búsqueda de texto y vista de la página original junto a su texto.
+- 🛠 **Corrección manual** — añade/elimina filas, edita títulos, categorías y rangos, pega un índice o divide por intervalos, incluso si no se detecta ninguna sección.
+- 🔎 **OCR local opcional** — idiomas, carpeta tessdata y límite de páginas configurables; conserva el texto nativo si falla. No añade una capa OCR a los PDF exportados.
+- 👀 **Vista previa con confirmación** — revisa capítulos y páginas antes de extraer: edita títulos y páginas y desmarca los que no quieras; se validan rangos y solapamientos.
 - 📦 **Varios libros a la vez** — sube uno o varios PDF y gestiona cada uno en su pestaña.
-- 📥 **Descarga solo en ZIP** — pulsa Generar para obtener un ZIP por libro con todos los capítulos seleccionados en PDF; no se ofrecen PDF individuales ni CSV separados; el nombre de cada archivo sigue el formato que elijas (`01_Título`, `Cap01_Título`, `01. Título` o `Solo_Título`).
+- 📥 **Descarga solo en ZIP** — pulsa Generar para obtener un ZIP por libro con todos los capítulos seleccionados en PDF; no se ofrecen PDF individuales ni CSV separados. Opcionalmente incluye diagnóstico JSON e índice CSV dentro del ZIP; el nombre de cada archivo sigue el formato que elijas (`01_Título`, `Cap01_Título`, `01. Título` o `Solo_Título`).
 - 🔒 **PDF protegidos** — acepta documentos con contraseña (se introduce en Ajustes).
 - 🌗 **Tema Claro, Oscuro y Automático** — el modo automático sigue a tu sistema operativo en vivo.
 - 📊 **Historial de la sesión** — cada trabajo con su método, capítulos, páginas y estado.
-- 🖥 **Tres versiones** — Web (Streamlit), escritorio (Tkinter) y CLI, con el mismo motor.
+- 🖥 **Tres versiones** — Web (Streamlit), escritorio (Tkinter) y CLI. El laboratorio avanzado de esta versión está disponible en la Web; CLI y GUI mantienen su lógica anterior.
 
 ---
 
@@ -65,11 +69,22 @@ rail lateral oscuro, panel con héroe e indicadores, tablas con etiquetas de est
 streamlit run app_web.py
 ```
 
-1. **Panel** — sube los PDF, pulsa **Analizar** y revisa la vista previa de capítulos.
+1. **Panel** — sube los PDF, configura **Laboratorio PDF** si hace falta, pulsa **Analizar** y revisa diagnóstico y segmentos.
 2. **Generar** — extrae los capítulos seleccionados y prepara un ZIP con los PDF dentro. El único botón de descarga es **Descargar todos los capítulos (ZIP)**.
 3. **Historial** — resumen de los trabajos de la sesión.
 4. **Ajustes** — tema, contraseña del PDF y formato de los nombres de archivo.
 5. **Ayuda** — problemas comunes y guía rápida.
+
+### Si un PDF no se segmenta correctamente
+
+Abre **Diagnóstico** e inspecciona una página. Prueba otro método, activa OCR si
+el contenido es una imagen, pega un índice o define rangos manuales. Las páginas
+**Desde / Hasta** son físicas (desde 1), no necesariamente los números impresos.
+Las correcciones y ajustes se conservan al navegar durante la sesión.
+
+Consulta la [guía de métodos, OCR y depuración](docs/METODOS_PDF.md), con fuentes,
+comparación de alternativas internacionales, configuración en Windows y límites.
+No existe un método universal ni se promete reconocer cualquier libro sin revisión.
 
 ---
 
@@ -80,7 +95,7 @@ streamlit run app_web.py
 | **Python** | 3.10 o posterior ([python.org](https://python.org), marca *Add Python to PATH*) |
 | **Vista Web** | Cualquier navegador actualizado |
 | **GUI / .exe** | Windows (para el .exe compilado) o cualquier sistema con Tkinter |
-| **Opcional** | PyInstaller, solo para crear el ejecutable |
+| **Opcional** | Datos Tesseract para OCR local; OCRmyPDF para preparar escaneos externamente; PyInstaller para crear el ejecutable |
 
 ---
 
@@ -152,18 +167,21 @@ python -m pytest -q
 | Suite | Qué cubre |
 |---|---|
 | `tests/test_segmentador_core.py` | Detección por TOC y por texto, contraseñas, limpieza de nombres, ZIP, CSV y progreso |
-| `tests/test_app_web.py` | Flujo completo de la vista Web sin navegador (subir → analizar → generar → historial) con `streamlit.testing.v1` |
+| `tests/test_app_web.py` | Flujo Web, diagnóstico, inspección, corrección manual, índice pegado, invalidación de ZIP y navegación |
+| `tests/test_deteccion_avanzada.py` | Corpus sintético multilingüe, preliminares, tipografía, índices romanos, OCR, rangos y colisiones |
+| `tests/test_verificar_proyecto.py` | Codificación, configuración, sintaxis y conflictos de Git |
 
-La [integración continua](.github/workflows/ci.yml) ejecuta las dos suites y un
+La [integración continua](.github/workflows/ci.yml) ejecuta las suites y un
 arranque de humo de la vista Web en cada *push* y *pull request*.
 
 ---
 
 ## 🔒 Privacidad
 
-El análisis y la extracción se hacen **en tu propio equipo**. Ningún PDF se envía a
-servidores ni a servicios de terceros; el ZIP se genera en la sesión de tu navegador
-y se descarga directamente.
+Con una instalación local, el análisis y la extracción se hacen **en tu propio equipo**.
+No se usan APIs externas ni se envían PDF a terceros. Si alojas Streamlit en un
+servidor, los archivos se procesan en ese servidor, no dentro del navegador.
+El informe opcional del ZIP puede incluir muestras de texto: revísalo antes de compartirlo.
 
 ---
 
@@ -213,7 +231,7 @@ $texto = [System.IO.File]::ReadAllText($ruta)
 El verificador comprueba únicamente los archivos del proyecto, no la configuración
 global. No publiques archivos de configuración que contengan secretos.
 
-- **«No se detectaron capítulos»** — el PDF suele estar escaneado (imágenes sin texto seleccionable). Necesita OCR previo (por ejemplo con [OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF)).
+- **«No se detectaron capítulos»** — abre Laboratorio PDF: prueba otro método, inspecciona texto, activa OCR local o define rangos manuales sin OCR. Para escaneos torcidos consulta el preprocesamiento externo en la [guía](docs/METODOS_PDF.md).
 - **«El PDF está protegido con contraseña»** — escríbela en **Ajustes → Contraseña del PDF** y vuelve a analizar.
 - **El antivirus bloquea el .exe o el ZIP** — falso positivo habitual de PyInstaller y de los ZIP generados localmente. Añade el archivo a las exclusiones.
 - **Error de memoria con PDF enormes** — libros de más de 500 MB pueden necesitar más RAM; divide el PDF manualmente antes de segmentar.
