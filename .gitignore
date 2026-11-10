@@ -1,0 +1,87 @@
+# ==========================================================
+# ENTORNOS VIRTUALES PYTHON
+# ==========================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================================
+# DISTRIBUCIÓN / EMPAQUETADO (PyInstaller)
+# ==========================================================
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+develop-eggs/
+downloads/
+wheels/
+.installed.cfg
+MANIFEST
+*.manifest
+*.spec.bak
+
+# ==========================================================
+# CACHÉ DE PYTEST / COBERTURA
+# ==========================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache
+
+# ==========================================================
+# ARCHIVOS DE USUARIO / EDITOR
+# ==========================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================================
+# VARIABLES DE ENTORNO Y SECRETOS
+# ==========================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ==========================================================
+# STREAMLIT (si usas app_web.py)
+# ==========================================================
+.streamlit/secrets.toml
+
+# ==========================================================
+# ARCHIVOS GENERADOS POR TU APLICACIÓN
+# (NO subir PDFs personales ni capítulos generados)
+# ==========================================================
+*.pdf
+!README*.pdf
+*_capitulos/
+temp_output/
+output/
+salida/
+
+# ==========================================================
+# LOGS Y TEMPORALES
+# ==========================================================
+*.log
+logs/
+*.tmp
+*.bak
+tmp/
