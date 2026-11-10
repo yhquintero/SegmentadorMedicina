@@ -27,12 +27,15 @@ wheels/
 .installed.cfg
 MANIFEST
 *.manifest
+*.spec
 *.spec.bak
 
 # ==========================================================
-# CACHÉ DE PYTEST / COBERTURA
+# CACHÉ DE PYTEST / COBERTURA / LINTERS
 # ==========================================================
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 .coverage.*
 htmlcov/

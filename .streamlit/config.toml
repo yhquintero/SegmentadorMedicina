@@ -1,2 +1,25 @@
+<<<<<<< HEAD
 [server]
 maxUploadSize = 2000
+=======
+# Configuración de la vista Web — paleta inspirada en NovaGest (yhquintero/inventario)
+[theme]
+base = "light"
+primaryColor = "#574be0"
+backgroundColor = "#f4f6ff"
+secondaryBackgroundColor = "#eef0fc"
+textColor = "#141a3d"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+# Permite servir archivos estáticos (static/hero.jpg) para el héroe del Panel.
+enableStaticServing = true
+# Libros de Medicina: archivos grandes.
+maxUploadSize = 500
+
+[browser]
+gatherUsageStats = false
+>>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
