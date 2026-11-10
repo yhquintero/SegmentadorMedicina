@@ -1,16 +1,22 @@
 """
 Versión Web del Segmentador — Streamlit.
 Ejecuta con:  streamlit run app_web.py
+
+Cambios aplicados:
+- Importación moderna: `import pymupdf as fitz` (elimina el FutureWarning).
+- Compatible con archivos grandes (>250 MB) si configuras
+  `.streamlit/config.toml` con `server.maxUploadSize`.
 """
 
 import streamlit as st
-import fitz
+import pymupdf as fitz  # ⬅️ Importación moderna (sin FutureWarning)
 import re
 import io
 import os
 import zipfile
 from typing import List, Tuple, Optional
 
+# Patrón para detectar títulos de capítulo en el texto (plan B)
 CHAPTER_PATTERN = re.compile(
     r"^\s*(cap[ií]tulo|chapter|secci[oó]n|section|parte|part|unidad|unit|tema|topic)"
     r"\s+([\dIVXLCDM]+|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)",
@@ -20,7 +26,9 @@ CHAPTER_PATTERN = re.compile(
 st.set_page_config(page_title="Segmentador Médico PDF", page_icon="📚", layout="wide")
 
 
+# ---------------- LÓGICA CORE ----------------
 def limpiar(t: str) -> str:
+    """Convierte un título en un nombre de archivo válido."""
     t = re.sub(r'[\\/*?:"<>|]', "", t)
     t = re.sub(r"[\r\n\t]+", " ", t)
     t = re.sub(r"\s+", " ", t).strip()[:100]
@@ -28,11 +36,12 @@ def limpiar(t: str) -> str:
 
 
 def cap_por_toc(doc: fitz.Document) -> List[Tuple[str, int, int]]:
+    """Extrae capítulos desde la tabla de contenidos (TOC)."""
     toc = doc.get_toc(simple=True)
     if not toc:
         return []
     entradas = [(t.strip(), p) for l, t, p in toc if l == 1]
-    cap = []
+    cap: List[Tuple[str, int, int]] = []
     for i, (titulo, ini) in enumerate(entradas):
         fin = entradas[i + 1][1] - 1 if i + 1 < len(entradas) else doc.page_count
         if 1 <= ini <= fin <= doc.page_count:
@@ -41,7 +50,8 @@ def cap_por_toc(doc: fitz.Document) -> List[Tuple[str, int, int]]:
 
 
 def cap_por_texto(doc: fitz.Document) -> List[Tuple[str, int, int]]:
-    cand = []
+    """Plan B: detecta títulos buscando patrones en la primera línea de cada página."""
+    cand: List[Tuple[str, int]] = []
     for idx in range(doc.page_count):
         try:
             txt = doc[idx].get_text("text")
@@ -52,7 +62,7 @@ def cap_por_texto(doc: fitz.Document) -> List[Tuple[str, int, int]]:
         primera = txt.strip().split("\n")[0].strip()
         if CHAPTER_PATTERN.match(primera):
             cand.append((primera[:100], idx + 1))
-    cap = []
+    cap: List[Tuple[str, int, int]] = []
     for i, (titulo, ini) in enumerate(cand):
         fin = cand[i + 1][1] - 1 if i + 1 < len(cand) else doc.page_count
         if ini <= fin:
@@ -63,6 +73,7 @@ def cap_por_texto(doc: fitz.Document) -> List[Tuple[str, int, int]]:
 def segmentar(pdf_bytes: bytes, password: Optional[str]) -> Tuple[bytes, str, int]:
     """Devuelve (zip_bytes, método_usado, num_capitulos)."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
     if doc.needs_pass:
         if not password or not doc.authenticate(password):
             doc.close()
@@ -70,9 +81,11 @@ def segmentar(pdf_bytes: bytes, password: Optional[str]) -> Tuple[bytes, str, in
 
     cap = cap_por_toc(doc)
     metodo = "Marcadores (TOC)"
+
     if not cap:
         cap = cap_por_texto(doc)
         metodo = "Detección de texto"
+
     if not cap:
         doc.close()
         raise RuntimeError("No se detectaron capítulos (¿PDF escaneado? Necesita OCR).")
@@ -102,14 +115,15 @@ with st.sidebar:
     st.markdown(
         "**Consejos**\n"
         "- Verifica que el PDF tenga texto seleccionable.\n"
-        "- Archivos > 500 MB pueden tardar varios minutos.\n"
-        "- El ZIP se genera en el servidor y se envía a tu navegador."
+        "- Archivos > 250 MB pueden tardar varios minutos.\n"
+        "- El ZIP se genera en el servidor y se envía a tu navegador.\n"
+        "- Si falla con archivos enormes, sube `server.maxUploadSize` en `.streamlit/config.toml`."
     )
 
 uploaded = st.file_uploader("Selecciona un archivo PDF", type=["pdf"])
 
 if uploaded is not None:
-    st.info(f"📄 **{uploaded.name}** — {uploaded.size / (1024*1024):.2f} MB")
+    st.info(f"📄 **{uploaded.name}** — {uploaded.size / (1024 * 1024):.2f} MB")
 
     if st.button("🚀 Segmentar ahora", type="primary"):
         with st.spinner("Procesando PDF, por favor espera…"):
