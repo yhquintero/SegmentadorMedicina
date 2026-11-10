@@ -7,7 +7,7 @@
 ### Divide. Revisa. Descarga.
 
 **Divide automáticamente libros PDF de Medicina por capítulos — con vista previa editable,
-modo claro/oscuro y descarga por capítulo, en ZIP o sueltos.**
+modo claro/oscuro y descarga exclusivamente en ZIP con los capítulos en PDF dentro.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](#-requisitos)
 [![PyMuPDF](https://img.shields.io/badge/PyMuPDF-motor%20PDF-cc3c2c?style=flat-square)](#-requisitos)
@@ -47,7 +47,7 @@ modo claro/oscuro y descarga por capítulo, en ZIP o sueltos.**
 - 📚 **Doble método de detección** — usa los marcadores (TOC) del PDF y, si no existen, busca títulos de capítulo en el texto (*Capítulo*, *Chapter*, *Sección*, *Unidad*, *Parte*, *Tema*…).
 - 👀 **Vista previa con confirmación** — revisa capítulos y páginas antes de extraer: edita títulos y desmarca los que no quieras.
 - 📦 **Varios libros a la vez** — sube uno o varios PDF y gestiona cada uno en su pestaña.
-- 📥 **Descargas flexibles** — ZIP completo, capítulos individuales e índice en CSV; el nombre de cada archivo sigue el formato que elijas (`01_Título`, `Cap01_Título`, `01. Título` o `Solo_Título`).
+- 📥 **Descarga solo en ZIP** — pulsa Generar para obtener un ZIP por libro con todos los capítulos seleccionados en PDF; no se ofrecen PDF individuales ni CSV separados; el nombre de cada archivo sigue el formato que elijas (`01_Título`, `Cap01_Título`, `01. Título` o `Solo_Título`).
 - 🔒 **PDF protegidos** — acepta documentos con contraseña (se introduce en Ajustes).
 - 🌗 **Tema Claro, Oscuro y Automático** — el modo automático sigue a tu sistema operativo en vivo.
 - 📊 **Historial de la sesión** — cada trabajo con su método, capítulos, páginas y estado.
@@ -66,7 +66,7 @@ streamlit run app_web.py
 ```
 
 1. **Panel** — sube los PDF, pulsa **Analizar** y revisa la vista previa de capítulos.
-2. **Generar** — extrae los capítulos seleccionados y ofrece ZIP, CSV y descargas individuales.
+2. **Generar** — extrae los capítulos seleccionados y prepara un ZIP con los PDF dentro. El único botón de descarga es **Descargar todos los capítulos (ZIP)**.
 3. **Historial** — resumen de los trabajos de la sesión.
 4. **Ajustes** — tema, contraseña del PDF y formato de los nombres de archivo.
 5. **Ayuda** — problemas comunes y guía rápida.

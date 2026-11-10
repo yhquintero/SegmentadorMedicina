@@ -7,6 +7,8 @@ de un PDF con marcadores, generación de capítulos y registro en el Historial.
 """
 
 import os
+import io
+import zipfile
 
 import fitz  # PyMuPDF
 import pytest
@@ -28,6 +30,15 @@ def _pdf_con_toc() -> bytes:
     datos = doc.tobytes()
     doc.close()
     return datos
+
+
+def _comprobar_zip(job, cantidad):
+    with zipfile.ZipFile(io.BytesIO(job["generado"]["zip"])) as archivo:
+        assert len(archivo.namelist()) == cantidad
+        assert all(nombre.endswith(".pdf") for nombre in archivo.namelist())
+        for nombre in archivo.namelist():
+            with fitz.open(stream=archivo.read(nombre), filetype="pdf") as doc:
+                assert doc.page_count == 2
 
 
 def _pdf_protegido() -> bytes:
@@ -103,6 +114,7 @@ def test_flujo_completo_con_un_libro():
     texto = _texto(at)
     assert "Vista previa" in texto
     assert "Marcadores (TOC)" in texto
+    assert not list(at.get("download_button"))  # Analizar no genera descargas.
     assert len(at.data_editor) == 1
     assert at.data_editor[0].value.shape[0] == 3   # tres capítulos
 
@@ -113,9 +125,11 @@ def test_flujo_completo_con_un_libro():
     assert "3 capítulos" in texto and "generados" in texto
     descargas = list(at.get("download_button"))
     etiquetas = [d.label or "" for d in descargas]
-    assert any("ZIP" in e for e in etiquetas)
-    assert any("CSV" in e for e in etiquetas)
-    assert sum(1 for e in etiquetas if e.startswith("📥 0")) == 3
+    assert len(descargas) == 1
+    assert all("ZIP" in etiqueta for etiqueta in etiquetas)
+    _comprobar_zip(at.session_state["trabajos"][0], 3)
+    at.run()  # Las descargas sueltas tampoco reaparecen tras un rerun.
+    assert len(list(at.get("download_button"))) == 1
 
     _boton(at, "Historial").click()
     at.run()
@@ -144,6 +158,11 @@ def test_flujo_con_dos_libros():
 
     texto = _texto(at)
     assert texto.count("capítulos</b> generados") == 2 or texto.count("generados vía") == 2
+    descargas = list(at.get("download_button"))
+    assert len(descargas) == 2
+    assert all("ZIP" in d.label for d in descargas)
+    for job in at.session_state["trabajos"]:
+        _comprobar_zip(job, 3)
 
 
 def test_pdf_protegido_muestra_error():

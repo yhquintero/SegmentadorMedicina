@@ -8,30 +8,16 @@ modo claro/oscuro/automático y tablas con el mismo lenguaje visual.
 Ejecuta con:  streamlit run app_web.py
 
 Cambios aplicados:
-- Importación moderna: `import pymupdf as fitz` (elimina el FutureWarning).
 - Compatible con archivos grandes (>250 MB) si configuras
   `.streamlit/config.toml` con `server.maxUploadSize`.
 """
 
-<<<<<<< HEAD
-import streamlit as st
-import pymupdf as fitz  # ⬅️ Importación moderna (sin FutureWarning)
-import re
-=======
 import base64
 import datetime
 import html
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
 import io
 import os
 
-<<<<<<< HEAD
-# Patrón para detectar títulos de capítulo en el texto (plan B)
-CHAPTER_PATTERN = re.compile(
-    r"^\s*(cap[ií]tulo|chapter|secci[oó]n|section|parte|part|unidad|unit|tema|topic)"
-    r"\s+([\dIVXLCDM]+|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)",
-    re.IGNORECASE
-=======
 import pandas as pd
 import streamlit as st
 
@@ -49,7 +35,6 @@ st.set_page_config(
         "About": "SegmentadorMedicina · Divide libros PDF de Medicina por capítulos. "
                  "Interfaz inspirada en NovaGest (github.com/yhquintero/inventario).",
     },
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
 )
 
 __version__ = "2.0"
@@ -95,84 +80,6 @@ PALETA_OSCURO = {
 }
 
 
-<<<<<<< HEAD
-# ---------------- LÓGICA CORE ----------------
-def limpiar(t: str) -> str:
-    """Convierte un título en un nombre de archivo válido."""
-    t = re.sub(r'[\\/*?:"<>|]', "", t)
-    t = re.sub(r"[\r\n\t]+", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()[:100]
-    return t or "capitulo"
-
-
-def cap_por_toc(doc: fitz.Document) -> List[Tuple[str, int, int]]:
-    """Extrae capítulos desde la tabla de contenidos (TOC)."""
-    toc = doc.get_toc(simple=True)
-    if not toc:
-        return []
-    entradas = [(t.strip(), p) for l, t, p in toc if l == 1]
-    cap: List[Tuple[str, int, int]] = []
-    for i, (titulo, ini) in enumerate(entradas):
-        fin = entradas[i + 1][1] - 1 if i + 1 < len(entradas) else doc.page_count
-        if 1 <= ini <= fin <= doc.page_count:
-            cap.append((titulo, ini, fin))
-    return cap
-
-
-def cap_por_texto(doc: fitz.Document) -> List[Tuple[str, int, int]]:
-    """Plan B: detecta títulos buscando patrones en la primera línea de cada página."""
-    cand: List[Tuple[str, int]] = []
-    for idx in range(doc.page_count):
-        try:
-            txt = doc[idx].get_text("text")
-        except Exception:
-            continue
-        if not txt:
-            continue
-        primera = txt.strip().split("\n")[0].strip()
-        if CHAPTER_PATTERN.match(primera):
-            cand.append((primera[:100], idx + 1))
-    cap: List[Tuple[str, int, int]] = []
-    for i, (titulo, ini) in enumerate(cand):
-        fin = cand[i + 1][1] - 1 if i + 1 < len(cand) else doc.page_count
-        if ini <= fin:
-            cap.append((titulo, ini, fin))
-    return cap
-
-
-def segmentar(pdf_bytes: bytes, password: Optional[str]) -> Tuple[bytes, str, int]:
-    """Devuelve (zip_bytes, método_usado, num_capitulos)."""
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
-    if doc.needs_pass:
-        if not password or not doc.authenticate(password):
-            doc.close()
-            raise RuntimeError("PDF protegido o contraseña incorrecta.")
-
-    cap = cap_por_toc(doc)
-    metodo = "Marcadores (TOC)"
-
-    if not cap:
-        cap = cap_por_texto(doc)
-        metodo = "Detección de texto"
-
-    if not cap:
-        doc.close()
-        raise RuntimeError("No se detectaron capítulos (¿PDF escaneado? Necesita OCR).")
-
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for i, (titulo, ini, fin) in enumerate(cap, start=1):
-            nuevo = fitz.open()
-            nuevo.insert_pdf(doc, from_page=ini - 1, to_page=fin - 1)
-            data = nuevo.tobytes(garbage=3, deflate=True)
-            nuevo.close()
-            zf.writestr(f"{i:02d}_{limpiar(titulo)}.pdf", data)
-
-    doc.close()
-    zip_buf.seek(0)
-    return zip_buf.read(), metodo, len(cap)
-=======
 def _vars_css(paleta: dict) -> str:
     return " ".join(f"{k}: {v};" for k, v in paleta.items())
 
@@ -463,7 +370,6 @@ def css_tema(modo: str) -> str:
 
 def e(texto) -> str:
     return html.escape(str(texto))
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
 
 
 @st.cache_resource
@@ -716,7 +622,6 @@ def _dibujar_trabajo(job: dict, editados: dict) -> None:
                         "zip": zip_bytes,
                         "archivos": archivos,
                         "caps": caps_sel,
-                        "csv": core.indice_csv(caps_sel, archivos),
                     }
                     job["generado"] = generados
                     st.session_state["historial"].append({
@@ -740,45 +645,16 @@ def _dibujar_trabajo(job: dict, editados: dict) -> None:
             "ok",
         ), unsafe_allow_html=True)
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.download_button(
-                "📥 Descargar todos los capítulos (ZIP)",
-                data=generados["zip"],
-                file_name=f"{os.path.splitext(nombre)[0]}_capitulos.zip",
-                mime="application/zip",
-                type="primary",
-                key=f"zip_{job['id']}",
-            )
-        with c2:
-            st.download_button(
-                "📄 Descargar índice (CSV)",
-                data=generados["csv"],
-                file_name=f"{os.path.splitext(nombre)[0]}_indice.csv",
-                mime="text/csv",
-                key=f"csv_{job['id']}",
-            )
-
-        st.markdown(seccion("Descargas individuales"), unsafe_allow_html=True)
-        st.markdown(resumen([
-            (a["nombre"][:52], f"{a['paginas']} pág. · {mb(len(a['bytes']))}") for a in archivos[:8]
-        ]), unsafe_allow_html=True)
-        if len(archivos) > 8:
-            st.markdown(f'<div class="hint">…y {len(archivos) - 8} archivos más en el ZIP.</div>', unsafe_allow_html=True)
-
-        columnas = st.columns(4)
-        for i, archivo in enumerate(archivos):
-            with columnas[i % 4]:
-                etiqueta_corta = archivo["nombre"].replace(".pdf", "")
-                if len(etiqueta_corta) > 26:
-                    etiqueta_corta = etiqueta_corta[:25] + "…"
-                st.download_button(
-                    f"📥 {etiqueta_corta}",
-                    data=archivo["bytes"],
-                    file_name=archivo["nombre"],
-                    mime="application/pdf",
-                    key=f"cap_{job['id']}_{i}",
-                )
+        st.download_button(
+            "📥 Descargar todos los capítulos (ZIP)",
+            data=generados["zip"],
+            file_name=f"{os.path.splitext(nombre)[0]}_capitulos.zip",
+            mime="application/zip",
+            type="primary",
+            key=f"zip_{job['id']}",
+        )
+        st.caption("Todos los capítulos seleccionados están dentro del ZIP como archivos PDF. "
+                   "No se ofrecen descargas de PDF individuales.")
 
 
 def vista_panel() -> None:
@@ -789,25 +665,18 @@ def vista_panel() -> None:
     <div class="hero">
       <div class="eyebrow">{e(hoy)} · SegmentadorMedicina</div>
       <h1>Libros médicos,<br/>un capítulo por archivo.</h1>
-      <p>Sube uno o varios PDF, revisa la <b>vista previa de capítulos</b> y descarga cada
-      capítulo como un PDF independiente, con su índice en CSV. Todo se procesa en tu equipo.</p>
+      <p>Sube uno o varios PDF, revisa la <b>vista previa de capítulos</b> y pulsa <b>Generar</b>.
+      Descarga un ZIP por libro con los capítulos en PDF dentro. Todo se procesa en tu equipo.</p>
       <div class="chips">
         <span class="chip">Marcadores (TOC)</span>
         <span class="chip">Detección de texto</span>
-        <span class="chip">ZIP + CSV</span>
+        <span class="chip">Solo ZIP</span>
         <span class="chip">Sin nube</span>
       </div>
     </div>""", unsafe_allow_html=True)
 
     trabajos = st.session_state["trabajos"]
     st.markdown(
-<<<<<<< HEAD
-        "**Consejos**\n"
-        "- Verifica que el PDF tenga texto seleccionable.\n"
-        "- Archivos > 250 MB pueden tardar varios minutos.\n"
-        "- El ZIP se genera en el servidor y se envía a tu navegador.\n"
-        "- Si falla con archivos enormes, sube `server.maxUploadSize` en `.streamlit/config.toml`."
-=======
         banner(
             "💡 <b>Antes de generar nada</b> verás la lista de capítulos detectados: "
             "edita títulos, excluye los que no quieras y confirma. "
@@ -815,7 +684,6 @@ def vista_panel() -> None:
             "info",
         ),
         unsafe_allow_html=True,
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
     )
 
     n_libros = len(trabajos)
@@ -830,10 +698,6 @@ def vista_panel() -> None:
         ("Libros generados", f"{n_gen}/{n_libros}" if n_libros else "0", f"método: {e(metodo)}", "gold"),
     ]), unsafe_allow_html=True)
 
-<<<<<<< HEAD
-if uploaded is not None:
-    st.info(f"📄 **{uploaded.name}** — {uploaded.size / (1024 * 1024):.2f} MB")
-=======
     if not trabajos:
         st.markdown('<div class="quick-grid">'
                     + tarjeta_acceso("📤", "#574be0", "1 · Sube el PDF",
@@ -841,9 +705,8 @@ if uploaded is not None:
                     + tarjeta_acceso("🔍", "#0284c7", "2 · Revisa la vista previa",
                                      "Capítulos detectados por marcadores o por texto, editables antes de generar.")
                     + tarjeta_acceso("📥", "#059669", "3 · Descarga los capítulos",
-                                     "Un PDF por capítulo, el ZIP completo y el índice en CSV.")
+                                     "Pulsa Generar y descarga el ZIP con todos los PDF dentro.")
                     + "</div>", unsafe_allow_html=True)
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
 
     # ---- Subida y análisis ----
     with st.container(border=True):
@@ -1042,7 +905,7 @@ def vista_ayuda() -> None:
                 + tarjeta_acceso("🔍", "#0284c7", "2 · Analiza y revisa",
                                  "Se detectan los capítulos por marcadores (TOC) o por texto. Edita y confirma.")
                 + tarjeta_acceso("📥", "#059669", "3 · Genera y descarga",
-                                 "ZIP completo, capítulos sueltos e índice CSV. Todo queda en el Historial.")
+                                 "Un ZIP por libro con todos los capítulos seleccionados en PDF. Sin descargas sueltas.")
                 + "</div>", unsafe_allow_html=True)
 
     with st.container(border=True):
