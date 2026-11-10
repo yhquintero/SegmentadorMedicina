@@ -13,6 +13,12 @@ import csv
 import io
 import re
 import zipfile
+import math
+import hashlib
+import json
+from dataclasses import asdict
+
+from deteccion_pdf import OpcionesAnalisis, detectar, candidatos_indice, normalizar
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence, Tuple
 
@@ -50,6 +56,8 @@ class Capitulo:
     titulo: str
     inicio: int
     fin: int
+    fuente: str = "Manual"
+    categoria: str = "Sección"
 
     @property
     def paginas(self) -> int:
@@ -66,6 +74,11 @@ class InformeLibro:
     metodo: str
     capitulos: List[Capitulo] = field(default_factory=list)
 
+    diagnostico: list[dict] = field(default_factory=list)
+    candidatos: list[dict] = field(default_factory=list)
+    avisos: list[str] = field(default_factory=list)
+    reparado: bool = False
+
     @property
     def paginas_en_capitulos(self) -> int:
         return sum(c.paginas for c in self.capitulos)
@@ -76,7 +89,9 @@ def limpiar_nombre(titulo: str, max_len: int = 100, por_defecto: str = "Capitulo
     nombre = re.sub(r'[\\/*?:"<>|]', "", titulo)
     nombre = re.sub(r"[\r\n\t]+", " ", nombre)
     nombre = re.sub(r"\s+", " ", nombre).strip()
-    nombre = nombre[:max_len].strip()
+    nombre = nombre[:max_len].strip().rstrip(" .")
+    if re.match(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", nombre, re.I):
+        nombre = "_" + nombre
     return nombre or por_defecto
 
 
@@ -93,87 +108,173 @@ def abrir_pdf_bytes(pdf_bytes: bytes, password: Optional[str] = None) -> fitz.Do
     except Exception as e:
         raise ErrorSegmentador(f"No se pudo abrir el PDF: {e}")
 
+    if doc.page_count == 0:
+        doc.close()
+        raise ErrorSegmentador("El PDF no contiene páginas.")
     if doc.needs_pass:
         if not password:
             doc.close()
             raise ErrorSegmentador("El PDF está protegido con contraseña. Escríbela en Ajustes o junto al archivo.")
-        if not doc.authenticate(password):
+        try:
+            autenticado = doc.authenticate(password)
+        except Exception as exc:
+            doc.close()
+            raise ErrorSegmentador(f"No se pudo autenticar el PDF: {exc}") from exc
+        if not autenticado:
             doc.close()
             raise ErrorSegmentador("Contraseña incorrecta.")
     return doc
 
 
-def capitulos_por_toc(doc: fitz.Document) -> List[Capitulo]:
-    """Extrae capítulos de la tabla de contenidos (método principal)."""
-    toc = doc.get_toc(simple=True)
-    if not toc:
-        return []
+def _convertir_limites(limites, total):
+    return [Capitulo(c.titulo, c.pagina,
+                     limites[i + 1].pagina - 1 if i + 1 < len(limites) else total,
+                     c.fuente, c.categoria)
+            for i, c in enumerate(limites)]
 
-    entradas = [(titulo.strip(), pagina) for nivel, titulo, pagina in toc if nivel == 1]
-    capitulos: List[Capitulo] = []
-    for i, (titulo, inicio) in enumerate(entradas):
-        fin = entradas[i + 1][1] - 1 if i + 1 < len(entradas) else doc.page_count
-        if 1 <= inicio <= fin <= doc.page_count:
-            capitulos.append(Capitulo(titulo, inicio, fin))
-    return capitulos
+
+def capitulos_por_toc(doc: fitz.Document, nivel: int = 1) -> List[Capitulo]:
+    resultado = detectar(doc, OpcionesAnalisis(estrategia="marcadores", nivel_toc=nivel))
+    return _convertir_limites(resultado.limites, doc.page_count)
 
 
 def capitulos_por_texto(doc: fitz.Document) -> List[Capitulo]:
-    """Plan B: detecta títulos buscando patrones en la primera línea de cada página."""
-    candidatos: List[Tuple[str, int]] = []
-    for idx in range(doc.page_count):
-        try:
-            texto = doc[idx].get_text("text")
-        except Exception:
-            continue
-        if not texto:
-            continue
-        primera = texto.strip().split("\n")[0].strip()
-        if PATRON_CAPITULO.match(primera):
-            candidatos.append((primera[:100], idx + 1))
-
-    capitulos: List[Capitulo] = []
-    for i, (titulo, inicio) in enumerate(candidatos):
-        fin = candidatos[i + 1][1] - 1 if i + 1 < len(candidatos) else doc.page_count
-        if inicio <= fin:
-            capitulos.append(Capitulo(titulo, inicio, fin))
-    return capitulos
+    resultado = detectar(doc, OpcionesAnalisis(estrategia="texto"))
+    return _convertir_limites(resultado.limites, doc.page_count)
 
 
-def detectar_capitulos(doc: fitz.Document) -> Tuple[List[Capitulo], str]:
-    """Devuelve (capítulos, método_usado). Método = TOC o detección de texto."""
-    capitulos = capitulos_por_toc(doc)
-    if capitulos:
-        return capitulos, METODO_TOC
-    capitulos = capitulos_por_texto(doc)
-    return capitulos, METODO_TEXTO
+def detectar_capitulos(doc: fitz.Document, opciones=None) -> Tuple[List[Capitulo], str]:
+    resultado = detectar(doc, opciones)
+    return _convertir_limites(resultado.limites, doc.page_count), resultado.metodo
 
 
-def analizar_pdf(pdf_bytes: bytes, password: Optional[str] = None, nombre: str = "libro.pdf") -> InformeLibro:
-    """Analiza un PDF y devuelve el informe con los capítulos detectados."""
+def analizar_pdf(pdf_bytes: bytes, password: Optional[str] = None, nombre: str = "libro.pdf",
+                 opciones: Optional[OpcionesAnalisis] = None, progreso=None) -> InformeLibro:
     doc = abrir_pdf_bytes(pdf_bytes, password)
     try:
-        capitulos, metodo = detectar_capitulos(doc)
-        return InformeLibro(
-            nombre=nombre,
-            paginas=doc.page_count,
-            protegido=bool(doc.needs_pass),
-            metodo=metodo if capitulos else "Sin capítulos",
-            capitulos=capitulos,
-        )
+        try:
+            resultado = detectar(doc, opciones, progreso)
+        except Exception as exc:
+            raise ErrorSegmentador(f"No se pudo analizar el documento: {exc}") from exc
+        caps = _convertir_limites(resultado.limites, doc.page_count)
+        return InformeLibro(nombre, doc.page_count, bool(doc.needs_pass),
+                            resultado.metodo if caps else "Sin capítulos", caps,
+                            resultado.paginas, [asdict(c) for c in resultado.candidatos],
+                            resultado.avisos, resultado.reparado)
     finally:
         doc.close()
 
 
+def validar_segmentos(capitulos: Sequence[Capitulo], total: int) -> list[str]:
+    """Falla antes de crear archivos: rangos enteros, sin solapamientos ni títulos vacíos."""
+    if not capitulos:
+        raise ErrorSegmentador("No hay segmentos seleccionados para generar.")
+    anterior = 0
+    huecos = []
+    for cap in capitulos:
+        try:
+            valido = (isinstance(cap.inicio, (int, float)) and isinstance(cap.fin, (int, float))
+                      and math.isfinite(cap.inicio) and math.isfinite(cap.fin)
+                      and int(cap.inicio) == cap.inicio and int(cap.fin) == cap.fin
+                      and 1 <= cap.inicio <= cap.fin <= total)
+        except (TypeError, ValueError, OverflowError):
+            valido = False
+        if not valido:
+            raise ErrorSegmentador(f"Rango inválido para «{cap.titulo}»: usa páginas físicas enteras entre 1 y {total}.")
+        if not str(cap.titulo).strip():
+            raise ErrorSegmentador("Todos los segmentos deben tener un título.")
+        if cap.inicio <= anterior:
+            raise ErrorSegmentador("Los segmentos deben estar ordenados y sin solapamientos. Revisa Desde / Hasta.")
+        if cap.inicio > anterior + 1:
+            huecos.append(f"{anterior + 1}–{int(cap.inicio) - 1}")
+        anterior = int(cap.fin)
+    if anterior < total:
+        huecos.append(f"{anterior + 1}–{total}")
+    return ["Páginas no incluidas: " + ", ".join(huecos)] if huecos else []
+
+
+def segmentos_por_intervalo(total: int, intervalo: int) -> list[Capitulo]:
+    if total < 1 or intervalo < 1:
+        raise ErrorSegmentador("El intervalo y el número de páginas deben ser positivos.")
+    return [Capitulo(f"Páginas {inicio}–{min(inicio + intervalo - 1, total)}", inicio,
+                     min(inicio + intervalo - 1, total)) for inicio in range(1, total + 1, intervalo)]
+
+
+def segmentos_desde_indice(pdf_bytes, texto, password=None, desfase=0):
+    doc = abrir_pdf_bytes(pdf_bytes, password)
+    try:
+        candidatos, avisos = candidatos_indice(doc, texto, desfase, estricto=True)
+        unicos = {}
+        for candidato in candidatos:
+            unicos.setdefault(candidato.pagina, candidato)
+        return _convertir_limites(sorted(unicos.values(), key=lambda c: c.pagina), doc.page_count), avisos
+    finally:
+        doc.close()
+
+
+def inspeccionar_pagina(pdf_bytes, numero, password=None, ocr=False, idioma="spa+eng", tessdata=""):
+    """Vista acotada: una página rasterizada, texto y etiqueta. Nunca ofrece el PDF suelto."""
+    doc = abrir_pdf_bytes(pdf_bytes, password)
+    try:
+        if not 1 <= numero <= doc.page_count:
+            raise ErrorSegmentador("Página fuera del documento.")
+        pagina = doc[numero - 1]
+        tp = None
+        if ocr:
+            from deteccion_pdf import _ocr_pagina
+            tp = _ocr_pagina(pagina, OpcionesAnalisis(idioma_ocr=idioma, tessdata=tessdata))
+        escala = min(1.5, 1200 / max(pagina.rect.width, pagina.rect.height))
+        imagen = pagina.get_pixmap(matrix=fitz.Matrix(escala, escala), alpha=False).tobytes("png")
+        return {"imagen": imagen, "texto": pagina.get_text("text", textpage=tp, sort=True),
+                "etiqueta": pagina.get_label(), "rotacion": pagina.rotation}
+    except ErrorSegmentador:
+        raise
+    except Exception as exc:
+        raise ErrorSegmentador(f"No se pudo inspeccionar la página: {exc}") from exc
+    finally:
+        doc.close()
+
+
+def buscar_texto(pdf_bytes, consulta, password=None, limite=100):
+    """Búsqueda literal normalizada, sin regex. No aplica OCR ni modifica páginas."""
+    consulta = normalizar(consulta)
+    if len(consulta) < 2:
+        raise ErrorSegmentador("Escribe al menos dos caracteres para buscar.")
+    resultados, errores = [], []
+    doc = abrir_pdf_bytes(pdf_bytes, password)
+    try:
+        for idx in range(doc.page_count):
+            try:
+                texto = doc[idx].get_text("text", sort=True)
+                lineas = [l for l in texto.splitlines() if consulta in normalizar(l)]
+                if lineas:
+                    resultados.append({"pagina": idx + 1, "etiqueta": doc[idx].get_label(),
+                                       "coincidencias": len(lineas), "muestra": " | ".join(lineas)[:400]})
+                if len(resultados) >= limite:
+                    break
+            except Exception:
+                errores.append(idx + 1)
+        return resultados, errores
+    finally:
+        doc.close()
+
+
+def huella_pdf(datos):
+    return hashlib.sha256(datos).hexdigest()
+
+
 def extraer_capitulo(doc: fitz.Document, cap: Capitulo) -> bytes:
     """Extrae el rango de páginas de un capítulo como un PDF independiente (bytes)."""
+    validar_segmentos([cap], doc.page_count)
     ini, fin = cap.inicio - 1, cap.fin - 1
     if ini < 0 or fin >= doc.page_count or ini > fin:
         raise ErrorSegmentador(f"Rango inválido para «{cap.titulo}» (pp. {cap.inicio}-{cap.fin}).")
     nuevo = fitz.open()
     try:
-        nuevo.insert_pdf(doc, from_page=ini, to_page=fin)
+        nuevo.insert_pdf(doc, from_page=int(ini), to_page=int(fin))
         return nuevo.tobytes(garbage=3, deflate=True)
+    except Exception as exc:
+        raise ErrorSegmentador(f"No se pudo extraer «{cap.titulo}» (páginas {cap.inicio}–{cap.fin}): {exc}") from exc
     finally:
         nuevo.close()
 
@@ -184,6 +285,7 @@ def construir_zip(
     password: Optional[str] = None,
     formato_nombre: str = "num",
     progreso: Optional[Callable[[int, int], None]] = None,
+    informe: Optional[dict] = None,
 ) -> Tuple[bytes, List[dict]]:
     """
     Genera un ZIP con un PDF por capítulo.
@@ -197,10 +299,19 @@ def construir_zip(
     doc = abrir_pdf_bytes(pdf_bytes, password)
     archivos: List[dict] = []
     try:
+        validar_segmentos(capitulos, doc.page_count)
+        usados = set()
         for i, cap in enumerate(capitulos, start=1):
             datos = extraer_capitulo(doc, cap)
+            nombre = nombre_archivo(i, cap.titulo, formato_nombre)
+            base = nombre[:-4]
+            sufijo = 2
+            while nombre.casefold() in usados:
+                nombre = f"{base}_{sufijo}.pdf"
+                sufijo += 1
+            usados.add(nombre.casefold())
             archivos.append({
-                "nombre": nombre_archivo(i, cap.titulo, formato_nombre),
+                "nombre": nombre,
                 "bytes": datos,
                 "paginas": cap.paginas,
             })
@@ -213,6 +324,9 @@ def construir_zip(
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for archivo in archivos:
             zf.writestr(archivo["nombre"], archivo["bytes"])
+        if informe is not None:
+            zf.writestr("informe_segmentacion.json", json.dumps(informe, ensure_ascii=False, indent=2))
+            zf.writestr("indice_segmentos.csv", indice_csv(capitulos, archivos))
     zip_buf.seek(0)
     return zip_buf.read(), archivos
 

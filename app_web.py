@@ -14,6 +14,8 @@ Cambios aplicados:
 
 import base64
 import datetime
+from dataclasses import asdict
+from deteccion_pdf import SECCIONES
 import html
 import io
 import os
@@ -22,6 +24,7 @@ import pandas as pd
 import streamlit as st
 
 import segmentador_core as core
+from web_pdf import opciones_analisis, laboratorio, filas_a_segmentos, firma_plan
 
 _RUTA_BASE = os.path.dirname(os.path.abspath(__file__))
 RUTA_ICONO = os.path.join(_RUTA_BASE, "assets", "segmentador-icon.png")
@@ -37,7 +40,7 @@ st.set_page_config(
     },
 )
 
-__version__ = "2.0"
+__version__ = "3.0"
 
 # ---------------------------------------------------------------------------
 # Temas — tokens tomados del sistema de diseño de NovaGest
@@ -453,7 +456,18 @@ def init_estado() -> None:
 
 
 def _ir_a(vista: str) -> None:
+    # Streamlit elimina widgets que no se dibujan en otra vista. Guardar un
+    # nuevo dataframe base al salir evita perder rangos corregidos al volver.
+    if st.session_state.get("vista") == "panel" and vista != "panel":
+        for job in st.session_state.get("trabajos", []):
+            if "tabla_editada" in job:
+                job["base_editor"] = job["tabla_editada"].copy()
+                job["revision"] = job.get("revision", 0) + 1
     st.session_state["vista"] = vista
+
+
+def _guardar_ajuste(nombre):
+    st.session_state[nombre] = st.session_state[f"_ajuste_{nombre}"]
 
 
 def siguiente_tema() -> None:
@@ -463,7 +477,7 @@ def siguiente_tema() -> None:
 
 
 def _fingerprint(archivo) -> str:
-    return f"{archivo.name}|{archivo.size}"
+    return f"{archivo.name}|{core.huella_pdf(archivo.getvalue())[:20]}"
 
 
 def _limpiar_todo() -> None:
@@ -473,7 +487,7 @@ def _limpiar_todo() -> None:
     `file_uploader` se cambia su clave y el widget nuevo arranca vacío.
     """
     st.session_state["trabajos"] = []
-    for clave in [k for k in st.session_state if str(k).startswith(("ed_", "gen_", "zip_", "csv_", "cap_"))]:
+    for clave in [k for k in st.session_state if str(k).startswith(("ed_", "gen_", "zip_", "csv_", "cap_", "pagina_", "ver_ocr_", "inspeccionar_", "intervalo_", "dividir_", "indice_", "desfase_", "aplicar_indice_", "completo_", "informe_", "buscar_", "busqueda_"))]:
         del st.session_state[clave]
     st.session_state["n_limpieza"] = st.session_state.get("n_limpieza", 0) + 1
 
@@ -555,65 +569,96 @@ def _dibujar_trabajo(job: dict, editados: dict) -> None:
         st.markdown(banner(f"❌ <b>{e(nombre)}</b> — {e(job['error'])}", "err"), unsafe_allow_html=True)
         return
 
+    laboratorio(job)
     caps = job["capitulos"]
     if not caps:
-        st.markdown(
-            banner(
-                f"⚠️ <b>{e(nombre)}</b> — no se detectaron capítulos. "
-                "Verifica que el PDF tenga texto seleccionable (¿escaneado? necesita OCR previo).",
-            ),
-            unsafe_allow_html=True,
-        )
-        return
+        st.info("No se detectaron límites fiables. Añade segmentos en la tabla o usa las herramientas "
+                "de corrección. No es necesario OCR para extraer rangos manuales.")
 
     # ---- Vista previa con confirmación (como en NovaGest: nada se genera sin revisar) ----
     st.markdown(seccion("Vista previa · confirma antes de generar"), unsafe_allow_html=True)
     df = pd.DataFrame([
         {"incluir": True, "num": i, "titulo": c.titulo,
-         "inicio": c.inicio, "fin": c.fin, "paginas": c.paginas}
+         "inicio": c.inicio, "fin": c.fin, "paginas": c.paginas,
+         "categoria": c.categoria, "fuente": c.fuente}
         for i, c in enumerate(caps, start=1)
-    ])
+    ], columns=["incluir", "num", "titulo", "inicio", "fin", "paginas", "categoria", "fuente"])
+    if "base_editor" in job:
+        df = job["base_editor"].copy()
     editado = st.data_editor(
         df,
-        key=f"ed_{job['id']}",
+        key=f"ed_{job['id']}_{job.get('revision', 0)}",
         hide_index=True,
-        num_rows="fixed",
-        disabled=["num", "inicio", "fin", "paginas"],
+        num_rows="dynamic",
+        disabled=["num", "paginas", "fuente"],
         column_config={
             "incluir": st.column_config.CheckboxColumn(
-                "✓", help="Desmarca un capítulo para excluirlo de la generación", width="small"),
+                "Incluir", help="Marca las filas que quieras exportar", width="small", default=True),
             "num": st.column_config.NumberColumn("#", width="small"),
-            "titulo": st.column_config.TextColumn("Capítulo (editable)", width="large"),
-            "inicio": st.column_config.NumberColumn("Desde", width="small"),
-            "fin": st.column_config.NumberColumn("Hasta", width="small"),
-            "paginas": st.column_config.NumberColumn("Págs.", width="small"),
+            "titulo": st.column_config.TextColumn("Segmento / sección (editable)", width="large", required=True),
+            "inicio": st.column_config.NumberColumn("Desde", width="small", min_value=1, max_value=job["paginas"], step=1, required=True),
+            "fin": st.column_config.NumberColumn("Hasta", width="small", min_value=1, max_value=job["paginas"], step=1, required=True),
+            "paginas": st.column_config.NumberColumn("Págs. originales", width="small"),
+            "categoria": st.column_config.SelectboxColumn("Tipo de sección", options=["Sección", "Capítulo / parte", "Preliminares"] + list(SECCIONES)),
+            "fuente": st.column_config.TextColumn("Origen de la propuesta"),
         },
     )
     editados[job["id"]] = editado
+    job["tabla_editada"] = editado.copy()
 
-    seleccion = editado[editado["incluir"]]
+    st.caption("Desde / Hasta: páginas físicas desde 1, ambas incluidas. Añade filas al final o elimina filas; "
+               "ordena los segmentos por página inicial. # y Págs. son referencias del análisis original.")
+    error_plan = None
+    caps_sel = []
+    try:
+        caps_sel = filas_a_segmentos(editado)
+        avisos_plan = core.validar_segmentos(caps_sel, job["paginas"])
+        for aviso in avisos_plan:
+            st.warning(aviso)
+    except core.ErrorSegmentador as exc:
+        error_plan = str(exc)
+        st.warning(error_plan)
+    seleccion = caps_sel
     st.markdown(resumen([
-        ("Seleccionados", f"{len(seleccion)} de {len(caps)}"),
-        ("Páginas a extraer", str(int(seleccion["paginas"].sum())) if len(seleccion) else "0"),
+        ("Seleccionados", f"{len(seleccion)} de {len(editado)} filas"),
+        ("Páginas a extraer", str(sum(c.paginas for c in caps_sel))),
         ("Formato de nombre", FORMATOS_LABEL.get(st.session_state["formato"], st.session_state["formato"])),
     ]), unsafe_allow_html=True)
 
+    incluir_informe = st.checkbox("Incluir índice CSV e informe de diagnóstico dentro del ZIP",
+                                  key=f"informe_{job['id']}", value=job.get("incluir_informe", False),
+                                  help="Opcional. El informe contiene el plan, opciones y muestras de texto: puede incluir información privada.")
+    job["incluir_informe"] = incluir_informe
+    firma = (firma_plan(caps_sel, st.session_state["formato"]), incluir_informe,
+             tuple(c.categoria for c in caps_sel))
     generados = job.get("generado")
+    if generados and generados.get("firma") != firma:
+        job.pop("generado", None)
+        job["estado"] = "corregido"
+        generados = None
+        st.info("La selección o el formato ha cambiado. Genera de nuevo el ZIP para descargar la versión actual.")
     if not generados:
         if st.button(f"🚀 Generar capítulos de «{nombre[:48]}»", key=f"gen_{job['id']}", type="primary"):
-            if seleccion.empty:
-                st.markdown(banner("⚠️ No hay capítulos seleccionados. Marca al menos uno en la vista previa."), unsafe_allow_html=True)
+            if error_plan:
+                st.error(error_plan)
             else:
-                caps_sel = [
-                    core.Capitulo(str(fila["titulo"]), int(fila["inicio"]), int(fila["fin"]))
-                    for _, fila in seleccion.iterrows()
-                ]
                 progreso = st.progress(0, text="Preparando la extracción…")
                 try:
+                    informe_zip = None
+                    if incluir_informe:
+                        informe_zip = {
+                            "archivo": nombre, "sha256": job.get("sha256"), "version": __version__,
+                            "fecha_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "formato_nombre": st.session_state["formato"], "avisos_plan": avisos_plan,
+                            "segmentos": [asdict(c) for c in caps_sel],
+                            "opciones": {k: v for k, v in job.get("opciones", {}).items() if k != "tessdata"},
+                            "avisos": job.get("avisos", []), "paginas": job.get("diagnostico", []),
+                        }
                     zip_bytes, archivos = core.construir_zip(
                         job["bytes"], caps_sel,
-                        password=st.session_state["password"] or None,
+                        password=job.get("password"),
                         formato_nombre=st.session_state["formato"],
+                        informe=informe_zip,
                         progreso=lambda hecho, total: progreso.progress(
                             hecho / total, text=f"Extrayendo capítulo {hecho} de {total}…"),
                     )
@@ -622,14 +667,16 @@ def _dibujar_trabajo(job: dict, editados: dict) -> None:
                         "zip": zip_bytes,
                         "archivos": archivos,
                         "caps": caps_sel,
+                        "firma": firma,
                     }
                     job["generado"] = generados
+                    job["estado"] = "generado"
                     st.session_state["historial"].append({
                         "hora": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
                         "archivo": nombre,
                         "metodo": job["metodo"],
                         "capitulos": len(caps_sel),
-                        "paginas": int(seleccion["paginas"].sum()),
+                        "paginas": sum(c.paginas for c in caps_sel),
                         "tamano": mb(len(zip_bytes)),
                         "estado": "Generado",
                     })
@@ -664,12 +711,13 @@ def vista_panel() -> None:
     st.markdown(f"""
     <div class="hero">
       <div class="eyebrow">{e(hoy)} · SegmentadorMedicina</div>
-      <h1>Libros médicos,<br/>un capítulo por archivo.</h1>
-      <p>Sube uno o varios PDF, revisa la <b>vista previa de capítulos</b> y pulsa <b>Generar</b>.
+      <h1>Libros médicos,<br/>cada sección en su sitio.</h1>
+      <p>Detecta <b>portada, copyright, prefacio, colaboradores, editores y capítulos</b>.
+      Revisa las páginas y corrige los segmentos antes de pulsar <b>Generar</b>.
       Descarga un ZIP por libro con los capítulos en PDF dentro. Todo se procesa en tu equipo.</p>
       <div class="chips">
         <span class="chip">Marcadores (TOC)</span>
-        <span class="chip">Detección de texto</span>
+        <span class="chip">Texto + tipografía + OCR opcional</span>
         <span class="chip">Solo ZIP</span>
         <span class="chip">Sin nube</span>
       </div>
@@ -680,7 +728,7 @@ def vista_panel() -> None:
         banner(
             "💡 <b>Antes de generar nada</b> verás la lista de capítulos detectados: "
             "edita títulos, excluye los que no quieras y confirma. "
-            "Tus PDF nunca salen de tu equipo.",
+            "Procesamiento local si ejecutas la app en tu equipo; sin APIs externas.",
             "info",
         ),
         unsafe_allow_html=True,
@@ -694,7 +742,7 @@ def vista_panel() -> None:
     st.markdown(fila_kpis([
         ("Libros en sesión", str(n_libros), "subidos en esta sesión", ""),
         ("Páginas analizadas", str(n_pags), "en total", "blue"),
-        ("Capítulos detectados", str(n_caps), "listos para revisar", "green"),
+        ("Segmentos detectados", str(n_caps), "listos para revisar", "green"),
         ("Libros generados", f"{n_gen}/{n_libros}" if n_libros else "0", f"método: {e(metodo)}", "gold"),
     ]), unsafe_allow_html=True)
 
@@ -716,6 +764,7 @@ def vista_panel() -> None:
             key=f"subidor_{st.session_state.get('n_limpieza', 0)}",
             help="Puedes seleccionar varios libros a la vez. Se procesan en tu equipo.",
         )
+        opciones = opciones_analisis()
         b1, b2, _ = st.columns([1, 1, 2])
         analizar = b1.button("🔍 Analizar", type="primary", disabled=not subidos)
         b2.button("🧹 Limpiar", disabled=not subidos and not trabajos, on_click=_limpiar_todo)
@@ -726,15 +775,26 @@ def vista_panel() -> None:
             barra = st.progress(0, text="Analizando…")
             for i, archivo in enumerate(subidos, start=1):
                 barra.progress(i / len(subidos), text=f"Analizando «{archivo.name}» ({i} de {len(subidos)})…")
-                job = {"id": _fingerprint(archivo), "nombre": archivo.name, "bytes": archivo.getvalue()}
+                job = {"id": _fingerprint(archivo), "nombre": archivo.name, "bytes": archivo.getvalue(),
+                       "password": password, "opciones": asdict(opciones),
+                       "revision": st.session_state.get("analisis_revision", 0) + 1}
+                job["sha256"] = core.huella_pdf(job["bytes"])
                 try:
-                    informe = core.analizar_pdf(job["bytes"], password=password, nombre=archivo.name)
+                    informe = core.analizar_pdf(job["bytes"], password=password, nombre=archivo.name,
+                                               opciones=opciones,
+                                               progreso=lambda hecho, total: barra.progress(
+                                                   ((i - 1) + hecho / total) / len(subidos),
+                                                   text=f"Leyendo «{archivo.name}»: página {hecho}/{total}…"))
                     job.update({
                         "paginas": informe.paginas,
                         "protegido": informe.protegido,
                         "metodo": informe.metodo,
                         "capitulos": informe.capitulos,
                         "estado": "analizado",
+                        "diagnostico": informe.diagnostico,
+                        "candidatos": informe.candidatos,
+                        "avisos": informe.avisos,
+                        "reparado": informe.reparado,
                     })
                     if not informe.capitulos:
                         st.session_state["historial"].append({
@@ -753,6 +813,7 @@ def vista_panel() -> None:
                     })
                 nuevos.append(job)
             barra.progress(1.0, text="Análisis completado")
+            st.session_state["analisis_revision"] = st.session_state.get("analisis_revision", 0) + 1
             st.session_state["trabajos"] = nuevos
             st.rerun()
 
@@ -847,13 +908,18 @@ def vista_ajustes() -> None:
         )
         st.session_state["tema"] = {"Automático": "auto", "Claro": "claro", "Oscuro": "oscuro"}[tema_label]
 
+    for nombre_ajuste in ("password", "formato"):
+        clave_widget = f"_ajuste_{nombre_ajuste}"
+        if clave_widget not in st.session_state:
+            st.session_state[clave_widget] = st.session_state[nombre_ajuste]
     with st.container(border=True):
         st.markdown(seccion("Generación de capítulos"), unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             st.text_input(
                 "Contraseña del PDF (si aplica)",
-                type="password", key="password",
+                type="password", key="_ajuste_password",
+                on_change=_guardar_ajuste, args=("password",),
                 help="Se usa al analizar libros protegidos. No se guarda fuera de tu sesión.",
             )
         with c2:
@@ -861,7 +927,8 @@ def vista_ajustes() -> None:
                 "Formato del nombre del archivo",
                 options=list(FORMATOS_LABEL),
                 format_func=lambda k: FORMATOS_LABEL[k],
-                key="formato",
+                key="_ajuste_formato",
+                on_change=_guardar_ajuste, args=("formato",),
                 help="Así se nombrará cada capítulo dentro del ZIP.",
             )
         st.markdown(
@@ -874,8 +941,8 @@ def vista_ajustes() -> None:
         st.markdown(seccion("Privacidad"), unsafe_allow_html=True)
         st.markdown(
             banner(
-                "🔒 <b>Tus datos mandan.</b> El análisis y la extracción se hacen en tu propio equipo, "
-                "dentro de esta sesión. Ningún PDF se envía a servidores ni a servicios de terceros.",
+                "🔒 <b>Tus datos mandan.</b> No se usan APIs externas. Si ejecutas Streamlit localmente, "
+                "el PDF se procesa en tu equipo; si lo alojas en un servidor, se procesa en ese servidor.",
                 "info",
             ),
             unsafe_allow_html=True,
@@ -903,7 +970,7 @@ def vista_ayuda() -> None:
                 + tarjeta_acceso("📤", "#574be0", "1 · Sube el PDF",
                                  "En el Panel, uno o varios libros. Si está protegido, pon la contraseña en Ajustes.")
                 + tarjeta_acceso("🔍", "#0284c7", "2 · Analiza y revisa",
-                                 "Se detectan los capítulos por marcadores (TOC) o por texto. Edita y confirma.")
+                                 "Combina marcadores, texto y tipografía. Diagnostica páginas, prueba OCR y corrige los rangos.")
                 + tarjeta_acceso("📥", "#059669", "3 · Genera y descarga",
                                  "Un ZIP por libro con todos los capítulos seleccionados en PDF. Sin descargas sueltas.")
                 + "</div>", unsafe_allow_html=True)
@@ -911,8 +978,9 @@ def vista_ayuda() -> None:
     with st.container(border=True):
         st.markdown(seccion("Problemas comunes"), unsafe_allow_html=True)
         with st.expander("❌ «No se detectaron capítulos»"):
-            st.markdown("El PDF suele estar **escaneado** (imágenes, sin texto seleccionable). "
-                        "Necesita OCR previo (por ejemplo con OCRmyPDF) antes de segmentar.")
+            st.markdown("Abre **Laboratorio PDF** y prueba texto, marcadores con más profundidad o tipografía. "
+                        "Inspecciona las páginas: si están escaneadas, activa OCR local con Tesseract o prepara "
+                        "el libro con OCRmyPDF. También puedes extraer sin OCR definiendo rangos manuales.")
         with st.expander("🔒 «El PDF está protegido con contraseña»"):
             st.markdown("Escribe la contraseña en **Ajustes → Contraseña del PDF** y vuelve a pulsar **Analizar**.")
         with st.expander("🐢 «El archivo es muy grande y tarda»"):

@@ -18,6 +18,8 @@ RAIZ = Path(__file__).resolve().parent
 FUENTES = (
     "app_web.py",
     "segmentador_core.py",
+    "deteccion_pdf.py",
+    "web_pdf.py",
     "segmentar_libros.py",
     "segmentar_libros_gui.py",
 )

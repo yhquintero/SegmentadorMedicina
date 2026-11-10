@@ -7,11 +7,14 @@ on:
 jobs:
   pruebas:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
 
       - name: Dependencias
         run: |
@@ -21,8 +24,8 @@ jobs:
       - name: Configuración, codificación y conflictos de Git
         run: python verificar_proyecto.py
 
-      - name: Sintaxis de los cuatro puntos de entrada
-        run: python -m py_compile segmentador_core.py app_web.py segmentar_libros.py segmentar_libros_gui.py
+      - name: Sintaxis de los módulos y puntos de entrada
+        run: python -m py_compile segmentador_core.py deteccion_pdf.py web_pdf.py app_web.py segmentar_libros.py segmentar_libros_gui.py
 
       - name: Pruebas del núcleo y de la vista Web
         run: python -m pytest -q

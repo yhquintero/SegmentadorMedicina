@@ -185,3 +185,155 @@ def test_limpiar_vacia_la_sesion():
     at.run()
     assert not at.exception
     assert "Vista previa" not in _texto(at)
+
+
+def _widget(elementos, etiqueta):
+    return next(x for x in elementos if x.label == etiqueta)
+
+
+def test_pdf_sin_texto_se_puede_segmentar_manualmente():
+    with fitz.open() as doc:
+        doc.new_page()
+        doc.new_page()
+        datos = doc.tobytes()
+    at = _app()
+    at.file_uploader[0].upload("escaneado.pdf", datos, "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    assert not at.exception
+    assert len(at.data_editor) == 1
+    assert at.data_editor[0].value.empty
+    _boton(at, "Dividir por intervalos").click().run()
+    assert not at.exception
+    assert len(at.data_editor[0].value) == 2
+    _boton(at, "Generar").click().run()
+    assert not at.exception
+    descargas = list(at.get("download_button"))
+    assert len(descargas) == 1 and "ZIP" in descargas[0].label
+    with zipfile.ZipFile(io.BytesIO(at.session_state["trabajos"][0]["generado"]["zip"])) as z:
+        assert len(z.namelist()) == 2
+
+
+def test_inspeccion_de_pagina_e_indice_manual():
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    _boton(at, "Inspeccionar página").click().run()
+    assert not at.exception
+    job = at.session_state["trabajos"][0]
+    assert job["inspeccion"]["imagen"].startswith(b"\x89PNG")
+    _widget(at.text_area, "Pegar índice: título ... página").set_value("Portada ... 1\nPrefacio ... 3\nCapítulo 1 ... 5").run()
+    _boton(at, "Aplicar índice a la tabla").click().run()
+    assert not at.exception
+    assert at.data_editor[0].value.iloc[0]["titulo"] == "Portada"
+    _boton(at, "Generar").click().run()
+    assert not at.exception
+    _comprobar_zip(at.session_state["trabajos"][0], 3)
+
+
+def test_informe_dentro_zip_y_cambio_invalida_descarga():
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    _widget(at.checkbox, "Incluir índice CSV e informe de diagnóstico dentro del ZIP").check().run()
+    _boton(at, "Generar").click().run()
+    assert not at.exception
+    job = at.session_state["trabajos"][0]
+    with zipfile.ZipFile(io.BytesIO(job["generado"]["zip"])) as z:
+        assert "informe_segmentacion.json" in z.namelist()
+        assert "indice_segmentos.csv" in z.namelist()
+        assert b'"password"' not in z.read("informe_segmentacion.json")
+    assert len(list(at.get("download_button"))) == 1
+    _widget(at.checkbox, "Incluir índice CSV e informe de diagnóstico dentro del ZIP").uncheck().run()
+    assert not at.exception
+    assert not list(at.get("download_button"))
+    assert "generado" not in at.session_state["trabajos"][0]
+
+
+def test_metodo_manual_se_puede_elegir_y_reanalizar():
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _widget(at.selectbox, "Método de segmentación").set_value("manual").run()
+    _boton(at, "Analizar").click().run()
+    assert not at.exception
+    assert at.data_editor[0].value.empty
+    _boton(at, "Usar documento completo").click().run()
+    assert at.data_editor[0].value.iloc[0]["fin"] == 6
+    _widget(at.selectbox, "Método de segmentación").set_value("marcadores").run()
+    _boton(at, "Analizar").click().run()
+    assert not at.exception
+    assert len(at.data_editor[0].value) == 3
+
+
+def test_cambiar_formato_retira_zip_anterior():
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    _boton(at, "Generar").click().run()
+    assert len(list(at.get("download_button"))) == 1
+    _boton(at, "Ajustes").click().run()
+    _widget(at.selectbox, "Formato del nombre del archivo").set_value("titulo").run()
+    _boton(at, "Panel").click().run()
+    assert not at.exception
+    assert not list(at.get("download_button"))
+    _boton(at, "Generar").click().run()
+    assert not at.exception
+    assert len(list(at.get("download_button"))) == 1
+    nombres = [a["nombre"] for a in at.session_state["trabajos"][0]["generado"]["archivos"]]
+    assert not nombres[0].startswith("01_")
+
+
+def test_plan_solapado_no_ofrece_zip(monkeypatch):
+    import streamlit as st
+
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    editor_real = st.data_editor
+    def editor_con_solapamiento(data, **kwargs):
+        editor_real(data, **kwargs)
+        modificado = data.copy()
+        modificado.loc[1, "inicio"] = 2  # final del segmento anterior
+        return modificado
+    monkeypatch.setattr(st, "data_editor", editor_con_solapamiento)
+    _boton(at, "Generar").click().run()
+    assert not at.exception
+    assert any("solapamientos" in x.value for x in at.error)
+    assert not list(at.get("download_button"))
+
+
+def test_correcciones_se_conservan_al_navegar(monkeypatch):
+    import streamlit as st
+
+    at = _app()
+    at.file_uploader[0].upload("demo.pdf", _pdf_con_toc(), "application/pdf")
+    at.run()
+    _boton(at, "Analizar").click().run()
+    editor_real = st.data_editor
+    def editar(data, **kwargs):
+        editor_real(data, **kwargs)
+        modificado = data.copy()
+        modificado.loc[0, "titulo"] = "Portada corregida manualmente"
+        return modificado
+    monkeypatch.setattr(st, "data_editor", editar)
+    at.run()
+    monkeypatch.setattr(st, "data_editor", editor_real)
+    _boton(at, "Historial").click().run()
+    _boton(at, "Panel").click().run()
+    assert not at.exception
+    assert at.data_editor[0].value.iloc[0]["titulo"] == "Portada corregida manualmente"
+
+
+def test_password_se_conserva_en_ajustes():
+    at = _app()
+    _boton(at, "Ajustes").click().run()
+    _widget(at.text_input, "Contraseña del PDF (si aplica)").set_value("secreto").run()
+    _boton(at, "Panel").click().run()
+    assert at.session_state["password"] == "secreto"
+    at.run()
+    assert at.session_state["password"] == "secreto"
