@@ -6,7 +6,7 @@ Uso:
     python segmentar_libros.py <ruta_pdf> <carpeta_salida> [--password CONTRASEÑA]
 """
 
-import fitz  # PyMuPDF
+import pymupdf as fitz
 import re
 import os
 import sys

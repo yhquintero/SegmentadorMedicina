@@ -16,7 +16,7 @@ import zipfile
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence, Tuple
 
-import fitz  # PyMuPDF
+import pymupdf as fitz
 
 # Patrón para detectar títulos de capítulo en el texto (plan B).
 # Cubre: Capítulo 1, CAPÍTULO IV, Chapter 3, Sección 2.1, Unidad 5, Parte I…

@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 import queue
-import fitz
+import pymupdf as fitz
 import re
 import os
 import traceback

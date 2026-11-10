@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-[server]
-maxUploadSize = 2000
-=======
-# Configuración de la vista Web — paleta inspirada en NovaGest (yhquintero/inventario)
+$contenido = @'
+# Configuración de la vista Web — SegmentadorMedicina
 [theme]
 base = "light"
 primaryColor = "#574be0"
@@ -17,9 +14,14 @@ toolbarMode = "minimal"
 [server]
 # Permite servir archivos estáticos (static/hero.jpg) para el héroe del Panel.
 enableStaticServing = true
-# Libros de Medicina: archivos grandes.
-maxUploadSize = 500
+# Libros de Medicina: archivos grandes (hasta 2 GB).
+maxUploadSize = 2000
 
 [browser]
 gatherUsageStats = false
->>>>>>> 50c34f1e001b8563ee77a464db68ba9b771e2898
+'@
+
+$ruta = ".streamlit\config.toml"
+$utf8SinBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText((Resolve-Path $ruta), $contenido, $utf8SinBom)
+Write-Host "✅ config.toml reescrito en UTF-8 sin BOM" -ForegroundColor Green
