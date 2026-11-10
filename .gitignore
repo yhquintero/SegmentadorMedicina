@@ -1,24 +1,90 @@
-# Python
+# ==========================================================
+# ENTORNOS VIRTUALES PYTHON
+# ==========================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-venv/
-env/
+*$py.class
+*.so
 
-# PyInstaller (salida del .exe)
+# ==========================================================
+# DISTRIBUCIÓN / EMPAQUETADO (PyInstaller)
+# ==========================================================
 build/
 dist/
+*.egg-info/
+.eggs/
+*.egg
+develop-eggs/
+downloads/
+wheels/
+.installed.cfg
+MANIFEST
+*.manifest
 *.spec
+*.spec.bak
 
-# Pruebas y herramientas
+# ==========================================================
+# CACHÉ DE PYTEST / COBERTURA / LINTERS
+# ==========================================================
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache
 
-# Sistema
+# ==========================================================
+# ARCHIVOS DE USUARIO / EDITOR
+# ==========================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Secretos de Streamlit (nunca subir)
+# ==========================================================
+# VARIABLES DE ENTORNO Y SECRETOS
+# ==========================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ==========================================================
+# STREAMLIT (si usas app_web.py)
+# ==========================================================
 .streamlit/secrets.toml
+
+# ==========================================================
+# ARCHIVOS GENERADOS POR TU APLICACIÓN
+# (NO subir PDFs personales ni capítulos generados)
+# ==========================================================
+*.pdf
+!README*.pdf
+*_capitulos/
+temp_output/
+output/
+salida/
+
+# ==========================================================
+# LOGS Y TEMPORALES
+# ==========================================================
+*.log
+logs/
+*.tmp
+*.bak
+tmp/
